@@ -3,13 +3,13 @@ from torch.utils.data import DataLoader
 from torch.utils.data.dataloader import default_collate
 from torch.utils.data.sampler import SubsetRandomSampler
 
-
 class BaseDataLoader(DataLoader):
     """
     Base class for all data loaders
     """
-    def __init__(self, dataset, batch_size, shuffle, validation_split, num_workers, collate_fn=default_collate):
+    def __init__(self, dataset, valid_dataset, batch_size, shuffle, validation_split, validation_random, num_workers):
         self.validation_split = validation_split
+        self.validation_random = validation_random
         self.shuffle = shuffle
         
         self.batch_idx = 0
@@ -21,7 +21,12 @@ class BaseDataLoader(DataLoader):
             'dataset': dataset,
             'batch_size': batch_size,
             'shuffle': self.shuffle,
-            'collate_fn': collate_fn,
+            'num_workers': num_workers
+            }
+        self.valid_init_kwargs = {
+            'dataset': valid_dataset,
+            'batch_size': 1,
+            'shuffle': self.shuffle,
             'num_workers': num_workers
             }
         super(BaseDataLoader, self).__init__(sampler=self.sampler, **self.init_kwargs)
@@ -31,15 +36,17 @@ class BaseDataLoader(DataLoader):
             return None, None
 
         idx_full = np.arange(self.n_samples)
-
-        np.random.seed(0) 
-        np.random.shuffle(idx_full)
-
         len_valid = int(self.n_samples * split)
-
-        valid_idx = idx_full[0:len_valid]
-        train_idx = np.delete(idx_full, np.arange(0, len_valid))
+        moder = int(1 / split)
         
+        if self.validation_random:
+            np.random.seed(0)
+            np.random.shuffle(idx_full)
+            valid_idx = idx_full[0:len_valid]
+            train_idx = np.delete(idx_full, np.arange(0, len_valid))
+        else:
+            valid_idx = np.array([i for i in range(0, self.n_samples, moder)])
+            train_idx = np.delete(idx_full, valid_idx)
         train_sampler = SubsetRandomSampler(train_idx)
         valid_sampler = SubsetRandomSampler(valid_idx)
         
@@ -53,5 +60,4 @@ class BaseDataLoader(DataLoader):
         if self.valid_sampler is None:
             return None
         else:
-            return DataLoader(sampler=self.valid_sampler, **self.init_kwargs)
-    
+            return DataLoader(sampler=self.valid_sampler, **self.valid_init_kwargs)
